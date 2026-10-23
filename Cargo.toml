@@ -2,6 +2,13 @@
 name = "nmcl"
 version = "0.1.0"
 edition = "2021"
+description = "A Minecraft Starter Based on Terminal，一个基于终端的Minecraft启动器"
+readme = "README.md"
+homepage = "https://nasyt.hoha.top"
+repository = "https://github.com/nasyt233/nmcl"
+license = "MIT OR Apache-2.0"
+authors = ["nasyt"]
+keywords = ["nmcl", "nasyt", "Minecraft", "game", "starter"]
 
 [dependencies]
 ratatui = "0.29"
