@@ -1,0 +1,177 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'nmcl-*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ---------- Linux (musl 静态) ----------
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            target_name: linux-amd64
+            bin_name: nmcl
+            ext: ''
+            use_zig: true
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-musl
+            target_name: linux-arm64
+            bin_name: nmcl
+            ext: ''
+            use_zig: true
+
+          # ---------- Windows ----------
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            target_name: win-amd64
+            bin_name: nmcl.exe
+            ext: '.exe'
+            use_zig: false
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            target_name: win-arm64
+            bin_name: nmcl.exe
+            ext: '.exe'
+            use_zig: false
+
+          # ---------- macOS ----------
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            target_name: macos-amd64
+            bin_name: nmcl
+            ext: ''
+            use_zig: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            target_name: macos-arm64
+            bin_name: nmcl
+            ext: ''
+            use_zig: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Zig
+        if: matrix.use_zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        if: matrix.use_zig
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Get package version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
+          if [ -z "$VERSION" ]; then
+            echo "❌ 无法读取版本号"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Package version: $VERSION"
+
+      - name: Verify tag matches version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/nmcl-}"
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "❌ Tag (nmcl-$TAG) 与 Cargo.toml 版本 ($VERSION) 不一致"
+            exit 1
+          fi
+          echo "✅ 版本号一致"
+
+      - name: Build (musl via zig)
+        if: matrix.use_zig
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: '!matrix.use_zig'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.use_zig }}" = "true" ]; then
+            if [ -f "target/release/${{ matrix.bin_name }}" ]; then
+              SRC="target/release/${{ matrix.bin_name }}"
+            else
+              SRC="target/${{ matrix.target }}/release/${{ matrix.bin_name }}"
+            fi
+          else
+            SRC="target/${{ matrix.target }}/release/${{ matrix.bin_name }}"
+          fi
+          DST="dist/nmcl-${{ steps.version.outputs.version }}-${{ matrix.target_name }}${{ matrix.ext }}"
+          cp "$SRC" "$DST"
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x "$DST"
+          fi
+          echo "=== 文件信息 ==="
+          ls -la dist/
+          if command -v file >/dev/null 2>&1; then
+            file "$DST"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nmcl-${{ matrix.target_name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -laR artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
