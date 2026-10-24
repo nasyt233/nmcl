@@ -19,10 +19,12 @@ pub fn draw_resources(f: &mut Frame, app: &mut App, area: Rect, layout: &mut UiL
         .split(area);
 
     // 左栏分类
+    let is_focus = app.focus_area == crate::app::FocusArea::Left;
     let side_block = Block::default()
         .borders(Borders::RIGHT)
-        .border_style(Style::default().fg(GRAY_DIM))
+        .border_style(Style::default().fg(if is_focus { GOLD } else { GRAY_DIM }))
         .style(Style::default().bg(BG));
+
     let side_inner = side_block.inner(cols[0]);
     f.render_widget(side_block, cols[0]);
 

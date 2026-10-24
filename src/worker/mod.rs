@@ -3,8 +3,7 @@ pub mod launch;
 pub mod meta;
 pub mod modrinth;
 pub mod natives;
-
-//pub use meta::{RemoteCategory, RemoteVersion};
+pub mod fabric;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModLoader {

@@ -7,13 +7,8 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
-
 use super::common::{centered, clickable, BG, GOLD, GRAY, GRAY_DIM, GRASS, RED, SKY, TEXT};
-
-// ============================================================
 // 1. 资源下载弹窗（MC 版本 / 子版本 / 安装实例 三栏）
-// ============================================================
-
 pub fn draw_resource_modal(f: &mut Frame, app: &mut App) {
     let area = centered(f.area(), 96, 20);
     f.render_widget(Clear, area);

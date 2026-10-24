@@ -34,7 +34,10 @@ impl Tab {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusArea { Left, Right }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile { pub id: String, pub name: String }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,18 +50,25 @@ pub enum VersionSide {
 impl VersionSide {
     pub fn title(self) -> &'static str {
         match self {
-            VersionSide::Local => "本地版本", VersionSide::Latest => "最新版", VersionSide::Release => "正式版", VersionSide::Snapshot => "快照版", VersionSide::Old => "远古版", VersionSide::AprilFools => "愚人节", VersionSide::Mod => "模组", VersionSide::Modpack => "整合包", VersionSide::Resourcepack => "资源包", VersionSide::Shader => "光影包",
+            VersionSide::Local => "本地版本", VersionSide::Latest => "最新版", VersionSide::Release => "正式版", VersionSide::Snapshot => "快照版",
+            VersionSide::Old => "远古版", VersionSide::AprilFools => "愚人节", VersionSide::Mod => "模组", VersionSide::Modpack => "整合包",
+            VersionSide::Resourcepack => "资源包", VersionSide::Shader => "光影包",
         }
     }
     pub fn index(self) -> usize {
         match self {
-            VersionSide::Local => 0, VersionSide::Latest => 1, VersionSide::Release => 2, VersionSide::Snapshot => 3, VersionSide::Old => 4, VersionSide::AprilFools => 5, VersionSide::Mod => 6, VersionSide::Modpack => 7, VersionSide::Resourcepack => 8, VersionSide::Shader => 9,
+            VersionSide::Local => 0, VersionSide::Latest => 1, VersionSide::Release => 2, VersionSide::Snapshot => 3,
+            VersionSide::Old => 4, VersionSide::AprilFools => 5, VersionSide::Mod => 6, VersionSide::Modpack => 7,
+            VersionSide::Resourcepack => 8, VersionSide::Shader => 9,
         }
     }
     pub fn is_mc(self) -> bool {
         matches!(self, VersionSide::Local | VersionSide::Latest | VersionSide::Release | VersionSide::Snapshot | VersionSide::Old | VersionSide::AprilFools)
     }
     pub fn is_community(self) -> bool { !self.is_mc() }
+    pub fn all() -> [VersionSide; 10] {
+        [VersionSide::Local, VersionSide::Latest, VersionSide::Release, VersionSide::Snapshot, VersionSide::Old, VersionSide::AprilFools, VersionSide::Mod, VersionSide::Modpack, VersionSide::Resourcepack, VersionSide::Shader]
+    }
     pub fn mc_group() -> [VersionSide; 6] { [VersionSide::Latest, VersionSide::Release, VersionSide::Snapshot, VersionSide::Old, VersionSide::AprilFools, VersionSide::Local] }
     pub fn community_group() -> [VersionSide; 4] { [VersionSide::Mod, VersionSide::Modpack, VersionSide::Resourcepack, VersionSide::Shader] }
 }
@@ -73,7 +83,7 @@ impl SettingsSide {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditField { None, PlayerName, JavaPath, VersionName, Memory, JavaArgs, GameArgs }
+pub enum EditField { None, PlayerName, JavaPath, VersionName, Memory, DefaultMemory, JavaArgs, GameArgs }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceModalFocus { McVersion, SubVersion, Instance, Confirm }
@@ -92,12 +102,30 @@ pub struct LauncherSettings {
     pub java_path: String,
     pub default_max_memory_mb: u32,
     pub versions: HashMap<String, VersionSettings>,
+    #[serde(default)]
+    pub profiles: Vec<Profile>,
+    #[serde(default)]
+    pub current_profile_id: Option<String>,
+    #[serde(default)]
+    pub selected_version: Option<String>,
 }
+
 impl LauncherSettings {
     pub fn load(mc_dir: &Path) -> Self {
         let path = mc_dir.join("nmcl_settings.json");
-        if let Ok(s) = fs::read_to_string(&path) { if let Ok(cfg) = serde_json::from_str(&s) { return cfg; } }
-        Self { player_name: "Steve".into(), java_path: "java".into(), default_max_memory_mb: 2048, versions: HashMap::new() }
+        if let Ok(s) = fs::read_to_string(&path) { 
+            if let Ok(mut cfg) = serde_json::from_str::<Self>(&s) { 
+                if cfg.profiles.is_empty() {
+                    cfg.profiles.push(Profile { id: "0".into(), name: "Steve".into() });
+                }
+                return cfg; 
+            } 
+        }
+        Self { 
+            player_name: "Steve".into(), java_path: "java".into(), default_max_memory_mb: 2048, 
+            versions: HashMap::new(), profiles: vec![Profile { id: "0".into(), name: "Steve".into() }],
+            current_profile_id: None, selected_version: None
+        }
     }
     pub fn save(&self, mc_dir: &Path) -> Result<(), String> {
         let s = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
@@ -128,12 +156,14 @@ pub enum ClickTarget {
     LocalVersion(usize), RemoteVersion(usize), ResourceHit(usize), SearchSubmit, Launch, QuickLaunch, OpenVersionSettings,
     OpenProfileManager, ProfileSelect(usize), ProfileCreate, ProfileDelete(usize),
     VersionManageBack, VersionManageSelect(VersionManagerMode), VersionManageLaunch, VersionManageDetect, VersionManageDelete, VersionManageCopy, VersionManageRename,
+    VersionLeftItem(usize),
     ModToggle(usize), ModDelete(usize), ModDownload,
     EditField(EditField), CloseModal, SaveModal,
     DownloadResource, LoaderFilter(ModLoader), SortToggle, GameVersionFilter, DownloadSelectedResource,
     ModpackGameVersion(usize), PrevPage, NextPage, DownloadName, DownloadLoader, DownloadLoaderVersion, DownloadMemory, ConfirmDownload, CancelDownload,
     ResourceModalMcVersion(usize), ResourceModalSubVersion(usize), ResourceModalInstance(usize), ResourceModalConfirm, ResourceModalCancel,
     ManageMemory, ManageRename, ManageDelete, ManageReinstallLoader, OpenDir,
+    SetJavaPath(usize), PrevVersion, NextVersion, OpenHomeVersions,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -170,15 +200,22 @@ pub struct App {
     pub tab: Tab,
     pub version_side: VersionSide,
     pub settings_side: SettingsSide,
+    pub focus_area: FocusArea,
+
+    pub home_version_modal_open: bool,
+    pub home_version_selected: usize,
+    pub version_left_selected: usize,
+    pub right_action_selected: usize,
 
     pub profiles: Vec<Profile>,
     pub current_profile: usize,
     pub profile_selected: Option<usize>,
     pub profile_modal_open: bool,
+    pub profile_adding: bool,
+    pub profile_name_buffer: String,
 
     pub versions: Vec<VersionEntry>,
     pub version_selected: Option<usize>,
-    
     pub version_manager_mode: VersionManagerMode,
     pub managing_version: Option<String>,
     pub mods: Vec<ModEntry>,
@@ -207,13 +244,14 @@ pub struct App {
     pub settings: LauncherSettings,
     pub editing: EditField,
     pub edit_buffer: String,
+    pub java_installs: Vec<String>,
 
     pub modpack_modal_open: bool,
     pub modpack_instance: Option<String>,
     pub modpack_game_versions: Vec<String>,
     pub modpack_selected_gv: Option<usize>,
     pub modpack_pending_hit: Option<ResourceHit>,
-    
+
     pub download_modal_open: bool,
     pub download_source: Option<RemoteVersion>,
     pub download_name_buffer: String,
@@ -224,7 +262,7 @@ pub struct App {
     pub download_loader_ver_index: Option<usize>,
     pub download_memory_buffer: String,
     pub download_fetching_loader_versions: bool,
-    
+
     pub resource_modal_open: bool,
     pub resource_modal_hit: Option<ResourceHit>,
     pub resource_modal_versions: Vec<ModVersionInfo>,
@@ -253,10 +291,18 @@ impl App {
     pub fn new(mc_dir: PathBuf) -> Self {
         let settings = LauncherSettings::load(&mc_dir);
         let log_file = open_log_file(&mc_dir);
+        let java_installs = Self::scan_java_installs();
+        let current_profile = settings.current_profile_id.as_ref()
+            .and_then(|id| settings.profiles.iter().position(|p| p.id == *id))
+            .unwrap_or(0);
+
         let mut app = Self {
             should_quit: false, tab: Tab::Home, version_side: VersionSide::Local, settings_side: SettingsSide::General,
-            profiles: vec![Profile { id: "0".into(), name: "Steve".into() }],
-            current_profile: 0, profile_selected: Some(0), profile_modal_open: false,
+            focus_area: FocusArea::Left,
+            home_version_modal_open: false, home_version_selected: 0, version_left_selected: 0, right_action_selected: 0,
+            profiles: settings.profiles.clone(),
+            current_profile, profile_selected: Some(current_profile), profile_modal_open: false,
+            profile_adding: false, profile_name_buffer: String::new(),
             versions: Vec::new(), version_selected: None, version_manager_mode: VersionManagerMode::List, managing_version: None,
             mods: Vec::new(), mod_selected: None,
             remote_versions: Vec::new(), remote_sel: [None; 10],
@@ -266,6 +312,7 @@ impl App {
             resource_game_version: None, resource_sort: SortOrder::Downloads, resource_game_versions: Vec::new(),
             local_page: 0, remote_page: [0; 10], resource_page: 0, resource_total_hits: 0,
             settings, editing: EditField::None, edit_buffer: String::new(),
+            java_installs,
             modpack_modal_open: false, modpack_instance: None, modpack_game_versions: Vec::new(), modpack_selected_gv: None, modpack_pending_hit: None,
             download_modal_open: false, download_source: None, download_name_buffer: String::new(), download_loader: ModLoader::Vanilla, download_loader_index: 0, download_loader_versions: Vec::new(), download_loader_version: None, download_loader_ver_index: None, download_memory_buffer: String::new(), download_fetching_loader_versions: false,
             resource_modal_open: false, resource_modal_hit: None, resource_modal_versions: Vec::new(), resource_modal_mc_versions: Vec::new(), resource_modal_mc_idx: None, resource_modal_sub_idx: None, resource_modal_instances: Vec::new(), resource_modal_instance_idx: None, resource_modal_focus: ResourceModalFocus::McVersion, resource_modal_fetching: false,
@@ -274,6 +321,27 @@ impl App {
         };
         app.push_log("启动器初始化");
         app
+    }
+
+    fn scan_java_installs() -> Vec<String> {
+        let mut javas = Vec::new();
+        let paths = ["/usr/lib/jvm", "/usr/java", "/opt/java", "/opt/jdk", "C:\\Program Files\\Java"];
+        for p in paths {
+            if let Ok(read) = std::fs::read_dir(p) {
+                for e in read.flatten() {
+                    let path = e.path().join("bin").join("java");
+                    if path.exists() { javas.push(path.to_string_lossy().to_string()); }
+                }
+            }
+        }
+        if let Ok(home) = std::env::var("JAVA_HOME") {
+            let path = std::path::PathBuf::from(home).join("bin").join("java");
+            if path.exists() {
+                let s = path.to_string_lossy().to_string();
+                if !javas.contains(&s) { javas.push(s); }
+            }
+        }
+        javas.sort(); javas.dedup(); javas
     }
 
     pub fn push_log(&mut self, line: impl Into<String>) {
@@ -288,10 +356,15 @@ impl App {
     pub fn flush_log(&mut self) { if let Some(f) = self.log_file.as_mut() { let _ = f.flush(); } }
     pub fn save_settings(&mut self) { let _ = self.settings.save(&self.mc_dir); }
     pub fn selected_local(&self) -> Option<&VersionEntry> { self.version_selected.and_then(|i| self.versions.get(i)) }
-    
+
     pub fn remote_list(&self) -> Vec<&RemoteVersion> {
         match self.version_side {
-            VersionSide::Latest => self.remote_versions.iter().filter(|v| v.category == RemoteCategory::Release).take(1).collect(),
+            VersionSide::Latest => {
+                let mut list = Vec::new();
+                if let Some(r) = self.remote_versions.iter().find(|v| v.category == RemoteCategory::Release) { list.push(r); }
+                if let Some(s) = self.remote_versions.iter().find(|v| v.category == RemoteCategory::Snapshot) { list.push(s); }
+                list
+            }
             VersionSide::Release => self.remote_versions.iter().filter(|v| v.category == RemoteCategory::Release).collect(),
             VersionSide::Snapshot => self.remote_versions.iter().filter(|v| v.category == RemoteCategory::Snapshot).collect(),
             VersionSide::Old => self.remote_versions.iter().filter(|v| v.version_type == "old_beta" || v.version_type == "old_alpha").collect(),
@@ -299,10 +372,12 @@ impl App {
             _ => Vec::new(),
         }
     }
+    
     pub fn selected_remote(&self) -> Option<&RemoteVersion> {
         if !self.version_side.is_mc() || self.version_side == VersionSide::Local { return None; }
         let list = self.remote_list(); let idx = self.remote_sel[self.version_side.index()]?; list.get(idx).copied()
     }
+    
     pub fn resource_modal_filtered_indices(&self) -> Vec<usize> {
         let Some(mc_idx) = self.resource_modal_mc_idx else { return Vec::new(); };
         let Some(mc) = self.resource_modal_mc_versions.get(mc_idx) else { return Vec::new(); };

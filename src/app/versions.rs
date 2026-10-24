@@ -97,6 +97,17 @@ impl App {
             self.refresh_mods();
         }
     }
+    pub fn delete_selected_version(&mut self) {
+        if let Some(v) = &self.managing_version {
+            let path = self.mc_dir.join("versions").join(v);
+            if std::fs::remove_dir_all(path).is_ok() {
+                self.push_log(format!("已删除 {}", v));
+                self.versions = crate::worker::meta::scan_versions(&self.mc_dir);
+                self.version_manager_mode = crate::app::VersionManagerMode::List;
+                self.managing_version = None;
+            }
+        }
+    }
 }
 
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {

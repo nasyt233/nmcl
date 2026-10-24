@@ -208,9 +208,19 @@ fn do_download_version(
         }
     }
 
-    // 5. 处理加载器 (Forge/Fabric 等)
+    // 5. 处理加载器
     if let Some(ld) = loader {
-        if ld != crate::worker::ModLoader::Vanilla {
+        if ld == crate::worker::ModLoader::Fabric {
+            let loader_ver = loader_version.ok_or("缺少 Fabric 加载器版本")?;
+            log(format!("[Fabric] 正在生成版本配置..."));
+            crate::worker::fabric::install_fabric_json(
+                mc_dir,
+                install_name,
+                &version.id,
+                loader_ver,
+            )?;
+            log(format!("[Fabric] 配置安装完成"));
+        } else if ld != crate::worker::ModLoader::Vanilla {
             log(format!("准备安装加载器 {:?}", ld));
             install_loader_stub(mc_dir, install_name, &version.id, ld, loader_version)?;
         }
@@ -252,6 +262,7 @@ fn do_download_version(
 // 辅助：安装加载器占位
 // ============================================================
 
+#[allow(dead_code)]
 fn install_loader_stub(
     mc_dir: &Path,
     install_name: &str,
