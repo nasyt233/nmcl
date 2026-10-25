@@ -10,8 +10,9 @@ use super::common::*;
 
 pub fn draw_home(f: &mut Frame, app: &mut App, area: Rect, layout: &mut UiLayout) {
     let cols = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(30), Constraint::Percentage(70)]).split(area);
-    let left = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(6), Constraint::Fill(1), Constraint::Length(3)]).split(cols[0]);
+    let left = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(6), Constraint::Min(5), Constraint::Length(3)]).split(cols[0]);
 
+    // 1. 角色卡片
     let profile = &app.profiles[app.current_profile];
     let p_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(GOLD)).style(Style::default().bg(BG));
     f.render_widget(p_block.clone(), left[0]);
@@ -21,6 +22,25 @@ pub fn draw_home(f: &mut Frame, app: &mut App, area: Rect, layout: &mut UiLayout
     ]).style(Style::default().bg(BG)), p_block.inner(left[0]));
     clickable(layout, left[0], ClickTarget::OpenProfileManager);
 
+    // 2. 运行中列表
+    let run_block = Block::default().title(" 运行中 ").borders(Borders::ALL).border_style(Style::default().fg(GRAY_DIM)).style(Style::default().bg(BG));
+    let inner = run_block.inner(left[1]);
+    f.render_widget(run_block, left[1]);
+
+    for (i, game) in app.running_games.iter().enumerate() {
+        if i as u16 >= inner.height { break; }
+        let y = inner.y + i as u16;
+        let row = Rect::new(inner.x, y, inner.width, 1);
+        
+        let text = format!(" ▶ {} ({})", game.version, game.player);
+        f.render_widget(Paragraph::new(text).style(Style::default().fg(GRASS)), row);
+        
+        let close_rect = Rect::new(inner.x + inner.width.saturating_sub(6), y, 6, 1);
+        f.render_widget(Paragraph::new(" [关闭] ").style(Style::default().fg(RED)), close_rect);
+        clickable(layout, close_rect, ClickTarget::KillGame(i));
+    }
+
+    // 3. 版本选择按钮
     f.render_widget(Paragraph::new(" 版本选择 ").alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(GRAY_DIM))).style(Style::default().bg(BG)), left[2]);
     clickable(layout, left[2], ClickTarget::OpenHomeVersions);
@@ -65,7 +85,9 @@ pub fn draw_home_version_modal(f: &mut Frame, app: &mut App) {
         let y = inner.y + (i - offset) as u16;
         let is_sel = i == app.home_version_selected;
         let style = if is_sel { Style::default().bg(GOLD).fg(Color::Black) } else { Style::default().fg(TEXT) };
-        f.render_widget(Paragraph::new(format!(" {}", v.name)).style(style), Rect::new(inner.x, y, inner.width, 1));
-        clickable(&mut app.layout, Rect::new(inner.x, y, inner.width, 1), ClickTarget::CloseModal); // 借用CloseModal行为，具体可单独实现
+        let row = Rect::new(inner.x, y, inner.width, 1);
+        
+        f.render_widget(Paragraph::new(format!(" {}", v.name)).style(style), row);
+        clickable(&mut app.layout, row, ClickTarget::HomeVersionSelect(i));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "nmcl"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A Minecraft Starter Based on Terminal，一个基于终端的Minecraft启动器"
 readme = "README.md"

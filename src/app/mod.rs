@@ -149,6 +149,13 @@ pub struct ModEntry {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct RunningGame {
+    pub version: String,
+    pub player: String,
+    pub pid: u32,
+}
+
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub enum ClickTarget {
@@ -163,7 +170,7 @@ pub enum ClickTarget {
     ModpackGameVersion(usize), PrevPage, NextPage, DownloadName, DownloadLoader, DownloadLoaderVersion, DownloadMemory, ConfirmDownload, CancelDownload,
     ResourceModalMcVersion(usize), ResourceModalSubVersion(usize), ResourceModalInstance(usize), ResourceModalConfirm, ResourceModalCancel,
     ManageMemory, ManageRename, ManageDelete, ManageReinstallLoader, OpenDir,
-    SetJavaPath(usize), PrevVersion, NextVersion, OpenHomeVersions,
+    SetJavaPath(usize), PrevVersion, NextVersion, OpenHomeVersions, HomeVersionSelect(usize), KillGame(usize),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -192,6 +199,7 @@ pub enum WorkerMsg {
     ResourceVersionsLoaded { hit: ResourceHit, versions: Vec<ModVersionInfo> },
     LoaderVersionsLoaded { loader: ModLoader, versions: Vec<String> },
     VersionDownloadFailed(String), Finished(Result<(), String>),
+    GameStarted { version: String, player: String, pid: u32 }, GameExited(String),
 }
 
 #[allow(dead_code)]
@@ -285,6 +293,8 @@ pub struct App {
     pub layout: UiLayout,
     pub log_file: Option<BufWriter<fs::File>>,
     pub start_instant: Instant,
+    
+    pub running_games: Vec<RunningGame>,
 }
 
 impl App {
@@ -318,6 +328,7 @@ impl App {
             resource_modal_open: false, resource_modal_hit: None, resource_modal_versions: Vec::new(), resource_modal_mc_versions: Vec::new(), resource_modal_mc_idx: None, resource_modal_sub_idx: None, resource_modal_instances: Vec::new(), resource_modal_instance_idx: None, resource_modal_focus: ResourceModalFocus::McVersion, resource_modal_fetching: false,
             status: "就绪".into(), busy: false, progress: None, progress_speed: 0.0, last_progress: None,
             logs: Vec::new(), mc_dir, cancel: Arc::new(AtomicBool::new(false)), layout: UiLayout::default(), log_file, start_instant: Instant::now(),
+            running_games: Vec::new(),
         };
         app.push_log("启动器初始化");
         app

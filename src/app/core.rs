@@ -98,15 +98,8 @@ impl App {
     }
     pub fn next_version_side(&mut self) { let all = VersionSide::all(); let i = self.version_side.index(); self.switch_version_side(all[(i + 1) % all.len()]); }
     pub fn prev_version_side(&mut self) { let all = VersionSide::all(); let i = self.version_side.index(); self.switch_version_side(all[(i + all.len() - 1) % all.len()]); }
-    
-    pub fn next_local_version(&mut self) { 
-        if self.versions.is_empty() { return; } 
-        self.scroll_local(1); 
-    }
-    pub fn prev_local_version(&mut self) { 
-        if self.versions.is_empty() { return; } 
-        self.scroll_local(-1); 
-    }
+    pub fn next_local_version(&mut self) { if self.versions.is_empty() { return; } self.scroll_local(1); }
+    pub fn prev_local_version(&mut self) { if self.versions.is_empty() { return; } self.scroll_local(-1); }
     
     pub fn next_page(&mut self, _tx: Sender<WorkerMsg>) {
         if self.version_side.is_community() {
@@ -201,8 +194,8 @@ impl App {
         let vs = self.settings.get_version(&version);
         let java = if !vs.java_path.trim().is_empty() { vs.java_path.clone() } else { self.settings.java_path.clone() };
 
-        self.cancel.store(false, Ordering::Relaxed); self.busy = true; self.status = "启动中".into();
-        self.push_log(format!("启动 {version}（玩家: {player}）"));
+        // 不阻塞 UI，不设置 busy
+        self.push_log(format!("尝试启动 {version}（玩家: {player}）"));
         crate::worker::launch::start_launch(tx, self.cancel.clone(), self.mc_dir.clone(), version, player, java, vs);
     }
 
@@ -235,6 +228,14 @@ impl App {
                     if self.remote_versions.iter().filter(|v| v.category == self.category_of(side)).count() > 0 && self.remote_sel[idx].is_none() { self.remote_sel[idx] = Some(0); }
                 }
                 self.push_log("[信息] 远程原版游戏版本清单已加载完成");
+            }
+            WorkerMsg::GameStarted { version, player, pid } => {
+                self.running_games.push(crate::app::RunningGame { version: version.clone(), player: player.clone(), pid });
+                self.push_log(format!("[信息] 游戏 {} 已启动（玩家: {}，PID: {}）", version, player, pid));
+            }
+            WorkerMsg::GameExited(version) => {
+                self.running_games.retain(|g| g.version != version);
+                self.push_log(format!("[信息] 游戏 {} 已退出", version));
             }
             WorkerMsg::DownloadComplete(id) => { self.push_log(format!("[完成] 游戏版本 {} 安装成功！", id)); self.versions = crate::worker::meta::scan_versions(&self.mc_dir); self.version_selected = Some(0); }
             WorkerMsg::ResourceSearchResults { hits, total } => {
@@ -274,7 +275,7 @@ impl App {
     }
 
     pub fn handle_mouse(&mut self, m: MouseEvent, tx: Sender<WorkerMsg>) {
-        let modal_open = self.profile_modal_open || self.download_modal_open || self.resource_modal_open || self.modpack_modal_open;
+        let modal_open = self.profile_modal_open || self.download_modal_open || self.resource_modal_open || self.modpack_modal_open || self.home_version_modal_open;
         match m.kind {
             MouseEventKind::Down(MouseButton::Left) => { if let Some(t) = self.layout.hit(m.column, m.row) { self.dispatch_click(t, tx); } }
             MouseEventKind::ScrollDown => { if modal_open { return; } if let Some(_) = self.layout.scroll_at(m.column, m.row) { self.nav_down(); } }
@@ -323,6 +324,23 @@ impl App {
             ClickTarget::VersionSideItem(v) => self.switch_version_side(v),
             ClickTarget::OpenProfileManager => { self.profile_modal_open = true; self.profile_selected = Some(self.current_profile); self.profile_adding = false; },
             ClickTarget::OpenHomeVersions => { self.home_version_modal_open = true; self.home_version_selected = self.version_selected.unwrap_or(0); },
+            ClickTarget::HomeVersionSelect(i) => {
+                if i < self.versions.len() {
+                    self.version_selected = Some(i);
+                    self.settings.selected_version = Some(self.versions[i].name.clone());
+                    self.save_settings();
+                    self.home_version_modal_open = false;
+                }
+            }
+            ClickTarget::KillGame(i) => {
+                if let Some(game) = self.running_games.get(i) {
+                    #[cfg(unix)]
+                    let _ = std::process::Command::new("kill").args(["-9", &game.pid.to_string()]).status();
+                    #[cfg(windows)]
+                    let _ = std::process::Command::new("taskkill").args(["/F", "/PID", &game.pid.to_string()]).status();
+                    self.push_log(format!("[警告] 尝试强制结束 {}", game.version));
+                }
+            }
             ClickTarget::Launch | ClickTarget::QuickLaunch => self.start_launch_selected(tx),
             ClickTarget::PrevVersion => self.prev_local_version(),
             ClickTarget::NextVersion => self.next_local_version(),

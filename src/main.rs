@@ -23,7 +23,6 @@ fn main() -> Result<()> {
     let versions = worker::meta::scan_versions(&app.mc_dir);
     app.versions = versions;
     
-    // 加载记忆中的版本
     if let Some(v_name) = &app.settings.selected_version {
         if let Some(idx) = app.versions.iter().position(|v| v.name == *v_name) {
             app.version_selected = Some(idx);
@@ -61,16 +60,11 @@ fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App, 
 }
 
 fn handle_key(app: &mut App, key: KeyEvent, tx: &Sender<WorkerMsg>) -> bool {
-    // 主页版本弹窗拦截
     if app.home_version_modal_open {
         match key.code {
             KeyCode::Esc => app.home_version_modal_open = false,
-            KeyCode::Up | KeyCode::Char('k') => {
-                if app.home_version_selected > 0 { app.home_version_selected -= 1; }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if app.home_version_selected + 1 < app.versions.len() { app.home_version_selected += 1; }
-            }
+            KeyCode::Up | KeyCode::Char('k') => { if app.home_version_selected > 0 { app.home_version_selected -= 1; } }
+            KeyCode::Down | KeyCode::Char('j') => { if app.home_version_selected + 1 < app.versions.len() { app.home_version_selected += 1; } }
             KeyCode::Enter => {
                 if !app.versions.is_empty() {
                     app.version_selected = Some(app.home_version_selected);
